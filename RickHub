@@ -1,0 +1,401 @@
+-- Welcome to Rick's Hub
+ 
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local LocalPlayer = Players.LocalPlayer
+local Camera = workspace.CurrentCamera
+ 
+-- Variables for states
+local ESPEnabled = true
+local TeamCheckEnabled = true
+local AimlockEnabled = false
+local FOVCircleVisible = true
+local FOVRadius = 100
+local FOVVerticalOffset = 0
+local SmoothFactor = 0.3
+ 
+local rightMouseDown = false
+local currentTarget = nil
+ 
+-- Create ScreenGui
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "RicksHubGUI"
+screenGui.ResetOnSpawn = false
+screenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+ 
+-- ====== Toggle GUI Button (always visible) =======
+local toggleGuiButton = Instance.new("TextButton")
+toggleGuiButton.Name = "ToggleGuiButton"
+toggleGuiButton.Size = UDim2.new(0, 120, 0, 30)
+toggleGuiButton.Position = UDim2.new(0, 10, 0, 10)
+toggleGuiButton.Text = "Toggle GUI"
+toggleGuiButton.TextColor3 = Color3.new(1,1,1)
+toggleGuiButton.BackgroundColor3 = Color3.fromRGB(30,30,30)
+toggleGuiButton.BorderSizePixel = 0
+toggleGuiButton.Parent = screenGui
+toggleGuiButton.ZIndex = 10
+toggleGuiButton.Active = true
+toggleGuiButton.Draggable = true
+ 
+-- ====== Main Frame =======
+local mainFrame = Instance.new("Frame")
+mainFrame.Name = "MainFrame"
+mainFrame.Size = UDim2.new(0, 300, 0, 350)
+mainFrame.Position = UDim2.new(0, 10, 0, 50)
+mainFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+mainFrame.BorderSizePixel = 0
+mainFrame.Parent = screenGui
+mainFrame.Visible = true
+mainFrame.ZIndex = 9
+mainFrame.Active = true
+mainFrame.Draggable = true
+ 
+-- Title Label
+local titleLabel = Instance.new("TextLabel")
+titleLabel.Name = "TitleLabel"
+titleLabel.Size = UDim2.new(1, 0, 0, 40)
+titleLabel.BackgroundTransparency = 1
+titleLabel.Text = "Rick's Hub"
+titleLabel.TextColor3 = Color3.new(1,1,1)
+titleLabel.Font = Enum.Font.SourceSansBold
+titleLabel.TextSize = 28
+titleLabel.Parent = mainFrame
+ 
+-- Helper function to create buttons
+local function createToggleButton(name, posY, initialState, textOn, textOff)
+    local btn = Instance.new("TextButton")
+    btn.Name = name
+    btn.Size = UDim2.new(0, 140, 0, 30)
+    btn.Position = UDim2.new(0, 10, 0, posY)
+    btn.BackgroundColor3 = Color3.fromRGB(50,50,50)
+    btn.BorderSizePixel = 0
+    btn.TextColor3 = Color3.new(1,1,1)
+    btn.Font = Enum.Font.SourceSans
+    btn.TextSize = 20
+    btn.Text = initialState and textOn or textOff
+    btn.Parent = mainFrame
+    return btn
+end
+ 
+-- Helper function to create sliders
+local function createSlider(name, posY, minVal, maxVal, initialValue, labelText)
+    local frame = Instance.new("Frame")
+    frame.Name = name .. "Frame"
+    frame.Size = UDim2.new(1, -20, 0, 50)
+    frame.Position = UDim2.new(0, 10, 0, posY)
+    frame.BackgroundTransparency = 1
+    frame.Parent = mainFrame
+ 
+    local label = Instance.new("TextLabel")
+    label.Name = name .. "Label"
+    label.Size = UDim2.new(1, 0, 0, 20)
+    label.BackgroundTransparency = 1
+    label.TextColor3 = Color3.new(1,1,1)
+    label.Font = Enum.Font.SourceSans
+    label.TextSize = 18
+    label.Text = labelText .. ": " .. tostring(initialValue)
+    label.Parent = frame
+ 
+    local sliderBar = Instance.new("Frame")
+    sliderBar.Name = "SliderBar"
+    sliderBar.Size = UDim2.new(1, 0, 0, 10)
+    sliderBar.Position = UDim2.new(0, 0, 0, 30)
+    sliderBar.BackgroundColor3 = Color3.fromRGB(80, 80, 80)
+    sliderBar.Parent = frame
+ 
+    local sliderKnob = Instance.new("ImageButton")
+    sliderKnob.Name = "SliderKnob"
+    sliderKnob.Size = UDim2.new(0, 20, 0, 20)
+    sliderKnob.Position = UDim2.new((initialValue - minVal)/(maxVal - minVal), -10, 0, 25)
+    sliderKnob.BackgroundColor3 = Color3.fromRGB(200, 200, 200)
+    sliderKnob.BorderSizePixel = 0
+    sliderKnob.AutoButtonColor = false
+    sliderKnob.Parent = frame
+    sliderKnob.ZIndex = 11
+ 
+    return frame, sliderKnob, label
+end
+ 
+-- Create Buttons
+local espButton = createToggleButton("ESPButton", 50, ESPEnabled, "ESP: Enabled", "ESP: Disabled")
+local teamCheckButton = createToggleButton("TeamCheckButton", 90, TeamCheckEnabled, "Team Check: Enabled", "Team Check: Disabled")
+local aimlockButton = createToggleButton("AimlockButton", 130, AimlockEnabled, "Aimlock: Enabled", "Aimlock: Disabled")
+local fovCircleButton = createToggleButton("FOVCircleButton", 170, FOVCircleVisible, "FOV Circle: Visible", "FOV Circle: Hidden")
+ 
+-- Create Sliders
+local fovRadiusFrame, fovRadiusKnob, fovRadiusLabel = createSlider("FOVRadius", 210, 0, 300, FOVRadius, "FOV Radius")
+local fovVertOffsetFrame, fovVertOffsetKnob, fovVertOffsetLabel = createSlider("FOVVerticalOffset", 270, -200, 200, FOVVerticalOffset, "Vertical Offset")
+local smoothingFrame, smoothingKnob, smoothingLabel = createSlider("SmoothFactor", 330, 0, 1, SmoothFactor, "Aim Smoothness")
+ 
+-- ====== FOV Circle =======
+local fovCircle = Instance.new("Frame")
+fovCircle.Name = "FOVCircle"
+fovCircle.Size = UDim2.new(0, FOVRadius*2, 0, FOVRadius*2)
+fovCircle.AnchorPoint = Vector2.new(0.5, 0.5)
+fovCircle.Position = UDim2.new(0.5, 0, 0.5, FOVVerticalOffset)
+fovCircle.BackgroundColor3 = Color3.new(0, 1, 0)
+fovCircle.BackgroundTransparency = 0.9  -- very transparent fill
+fovCircle.BorderSizePixel = 0
+fovCircle.ClipsDescendants = true
+fovCircle.Visible = FOVCircleVisible
+fovCircle.ZIndex = 8
+fovCircle.Parent = screenGui
+ 
+local uICorner = Instance.new("UICorner")
+uICorner.CornerRadius = UDim.new(0.5, 0)
+uICorner.Parent = fovCircle
+ 
+local uIStroke = Instance.new("UIStroke")
+uIStroke.Thickness = 2
+uIStroke.Color = Color3.fromRGB(0, 255, 0)
+uIStroke.Transparency = 0.85 -- more transparent outline
+uIStroke.Parent = fovCircle
+ 
+-- ========== ESP Logic ===========
+ 
+local function canSeeCharacter(character)
+    if not character or not character:FindFirstChild("HumanoidRootPart") then
+        return false
+    end
+ 
+    local rayParams = RaycastParams.new()
+    rayParams.FilterDescendantsInstances = {LocalPlayer.Character}
+    rayParams.FilterType = Enum.RaycastFilterType.Blacklist
+    rayParams.IgnoreWater = true
+ 
+    local origin = Camera.CFrame.Position
+    local direction = character.HumanoidRootPart.Position - origin
+ 
+    local raycastResult = workspace:Raycast(origin, direction, rayParams)
+    return raycastResult and raycastResult.Instance and raycastResult.Instance:IsDescendantOf(character)
+end
+ 
+local function highlightCharacter(character)
+    if character == LocalPlayer.Character then return end
+    if character:FindFirstChild("ESP_Highlight") then return end
+ 
+    local highlight = Instance.new("Highlight")
+    highlight.Name = "ESP_Highlight"
+    highlight.FillColor = Color3.fromRGB(255, 0, 0)
+    highlight.FillTransparency = 0.5
+    highlight.OutlineColor = Color3.fromRGB(255, 255, 0)
+    highlight.OutlineTransparency = 0
+    highlight.Adornee = character
+    highlight.Parent = character
+end
+ 
+local function removeHighlight(character)
+    local highlight = character:FindFirstChild("ESP_Highlight")
+    if highlight then
+        highlight:Destroy()
+    end
+end
+ 
+local function shouldHighlight(player)
+    if not ESPEnabled then return false end
+    if TeamCheckEnabled and player.Team == LocalPlayer.Team then return false end
+    if not player.Character or not player.Character:FindFirstChild("HumanoidRootPart") then return false end
+    return true
+end
+ 
+local function onPlayerAdded(player)
+    player.CharacterAdded:Connect(function(character)
+        character:WaitForChild("HumanoidRootPart")
+        removeHighlight(character)  -- remove old highlight if any
+        if shouldHighlight(player) then
+            highlightCharacter(character)
+        end
+    end)
+ 
+    if player.Character and shouldHighlight(player) then
+        removeHighlight(player.Character)
+        highlightCharacter(player.Character)
+    end
+end
+ 
+for _, player in ipairs(Players:GetPlayers()) do
+    onPlayerAdded(player)
+end
+Players.PlayerAdded:Connect(onPlayerAdded)
+ 
+Players.PlayerRemoving:Connect(function(player)
+    if player.Character then
+        removeHighlight(player.Character)
+    end
+end)
+ 
+-- ====== Aimlock =======
+local function getClosestHeadInFOV()
+    local center = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2 + FOVVerticalOffset)
+    local closestDist = math.huge
+    local closestHead = nil
+ 
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer and player.Character and player.Character:FindFirstChild("Head") then
+            if TeamCheckEnabled and player.Team == LocalPlayer.Team then
+                continue
+            end
+ 
+            local headPos, onScreen = Camera:WorldToViewportPoint(player.Character.Head.Position)
+            if onScreen then
+                local screenPos = Vector2.new(headPos.X, headPos.Y)
+                local distToCenter = (screenPos - center).Magnitude
+ 
+                if distToCenter <= FOVRadius and distToCenter < closestDist then
+                    -- Removed raycast check here
+                    closestDist = distToCenter
+                    closestHead = player.Character.Head
+                end
+            end
+        end
+    end
+ 
+    return closestHead
+end
+ 
+-- Update loop
+RunService.RenderStepped:Connect(function()
+    -- Update ESP highlights color
+    if ESPEnabled then
+        for _, player in ipairs(Players:GetPlayers()) do
+            if player.Character then
+                local highlight = player.Character:FindFirstChild("ESP_Highlight")
+                if highlight then
+                    if canSeeCharacter(player.Character) then
+                        highlight.FillColor = Color3.fromRGB(0, 255, 0)
+                    else
+                        highlight.FillColor = Color3.fromRGB(255, 0, 0)
+                    end
+                elseif shouldHighlight(player) then
+                    highlightCharacter(player.Character)
+                end
+            end
+        end
+    else
+        -- Remove all highlights if ESP disabled
+        for _, player in ipairs(Players:GetPlayers()) do
+            if player.Character then
+                removeHighlight(player.Character)
+            end
+        end
+    end
+ 
+    -- Update aimlock
+    if AimlockEnabled and rightMouseDown then
+        local head = getClosestHeadInFOV()
+        if head then
+            currentTarget = head
+            local targetCFrame = CFrame.new(Camera.CFrame.Position, head.Position)
+            Camera.CFrame = Camera.CFrame:Lerp(targetCFrame, SmoothFactor)
+        else
+            currentTarget = nil
+        end
+    else
+        currentTarget = nil
+    end
+ 
+    -- Update FOV circle position & size
+    fovCircle.Size = UDim2.new(0, FOVRadius * 2, 0, FOVRadius * 2)
+    fovCircle.Position = UDim2.new(0.5, 0, 0.5, FOVVerticalOffset)
+    fovCircle.Visible = FOVCircleVisible
+end)
+ 
+-- Mouse input for aimlock toggle
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed then return end
+    if input.UserInputType == Enum.UserInputType.MouseButton2 then
+        rightMouseDown = true
+    end
+end)
+ 
+UserInputService.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton2 then
+        rightMouseDown = false
+    end
+end)
+ 
+-- ======= Button Functionality =======
+ 
+espButton.MouseButton1Click:Connect(function()
+    ESPEnabled = not ESPEnabled
+    espButton.Text = ESPEnabled and "ESP: Enabled" or "ESP: Disabled"
+end)
+ 
+teamCheckButton.MouseButton1Click:Connect(function()
+    TeamCheckEnabled = not TeamCheckEnabled
+    teamCheckButton.Text = TeamCheckEnabled and "Team Check: Enabled" or "Team Check: Disabled"
+end)
+ 
+aimlockButton.MouseButton1Click:Connect(function()
+    AimlockEnabled = not AimlockEnabled
+    aimlockButton.Text = AimlockEnabled and "Aimlock: Enabled" or "Aimlock: Disabled"
+end)
+ 
+fovCircleButton.MouseButton1Click:Connect(function()
+    FOVCircleVisible = not FOVCircleVisible
+    fovCircleButton.Text = FOVCircleVisible and "FOV Circle: Visible" or "FOV Circle: Hidden"
+    fovCircle.Visible = FOVCircleVisible
+end)
+ 
+toggleGuiButton.MouseButton1Click:Connect(function()
+    mainFrame.Visible = not mainFrame.Visible
+end)
+ 
+-- ======= Slider Functionality =======
+local draggingSlider = nil
+local dragInput = nil
+local dragStart = nil
+local startPos = nil
+ 
+local function startDragging(sliderKnob, sliderLabel, minVal, maxVal, onChange)
+    sliderKnob.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            draggingSlider = sliderKnob
+            dragInput = input
+            dragStart = input.Position
+            startPos = sliderKnob.Position
+ 
+            -- Disable dragging of mainFrame while dragging slider
+            mainFrame.Active = false
+            mainFrame.Draggable = false
+ 
+            input.Changed:Connect(function()
+                if input.UserInputState == Enum.UserInputState.End then
+                    draggingSlider = nil
+                    -- Re-enable dragging of mainFrame when done dragging slider
+                    mainFrame.Active = true
+                    mainFrame.Draggable = true
+                end
+            end)
+        end
+    end)
+ 
+    UserInputService.InputChanged:Connect(function(input)
+        if draggingSlider == sliderKnob and input.UserInputType == Enum.UserInputType.MouseMovement then
+            local delta = input.Position.X - dragStart.X
+            local sliderBar = sliderKnob.Parent:FindFirstChild("SliderBar")
+            local sliderBarSize = sliderBar.AbsoluteSize.X
+            local newX = math.clamp(startPos.X.Offset + delta, 0, sliderBarSize)
+            sliderKnob.Position = UDim2.new(0, newX, 0, sliderKnob.Position.Y.Offset)
+ 
+            local newValue = (newX / sliderBarSize) * (maxVal - minVal) + minVal
+            sliderLabel.Text = string.format("%s: %.2f", sliderLabel.Text:match("^[^:]+"), newValue)
+            onChange(newValue)
+        end
+    end)
+end
+ 
+-- Connect sliders with logic
+startDragging(fovRadiusKnob, fovRadiusLabel, 0, 300, function(val)
+    FOVRadius = val
+end)
+ 
+startDragging(fovVertOffsetKnob, fovVertOffsetLabel, -200, 200, function(val)
+    FOVVerticalOffset = val
+end)
+ 
+startDragging(smoothingKnob, smoothingLabel, 0, 1, function(val)
+    SmoothFactor = val
+end)
